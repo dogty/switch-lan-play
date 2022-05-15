@@ -10,17 +10,18 @@ if (UV_LIBRARY)
         INTERFACE_INCLUDE_DIRECTORIES ${LIBUV_INCLUDE_DIR}
     )
 else()
-    message(STATUS "Installing libuv via submodule")
+    message(STATUS "Installing libuv via submodule" git apply --reject --whitespace=fix --ignore-space-change --ignore-whitespace ../patch/libuv_termux.diff
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/libuv)
     execute_process(COMMAND git submodule update --init -- external/libuv
                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_subdirectory(external/libuv EXCLUDE_FROM_ALL)
     target_include_directories(uv_a INTERFACE external/libuv/include)
     if (UV_TERMUX_PATCH)
-        message(STATUS "Apply libuv_termux.diff")
-        execute_process(COMMAND git apply ../patch/libuv_termux.diff
+        message(STATUS "Apply libuv_termux.diff" )
+        execute_process(COMMAND git apply --reject --whitespace=fix --ignore-space-change --ignore-whitespace ../patch/libuv_termux.diff
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/libuv)
     else()
-        execute_process(COMMAND git apply -R ../patch/libuv_termux.diff
+        execute_process(COMMAND git apply --ignore-space-change --ignore-whitespace ../patch/libuv_termux.diff
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/libuv)
     endif()
 endif()
