@@ -85,6 +85,69 @@ void parse_ipv4(const struct ether_frame *ether, struct ipv4 *ipv4)
     ipv4->payload = packet + ipv4->header_len;
 }
 
+struct broadcast_relay_ctx {
+    struct packet_ctx *packet_ctx;
+    const uint8_t *src_ip;
+    const uint8_t *packet;
+    uint16_t len;
+};
+
+/* Opt-in local broadcast relay: LANPLAY_RELAY_ONLY_FROM=ip[,ip...] re-sends
+   broadcasts from the listed consoles to every other local console as
+   unicast ethernet frames. Useful when a WiFi AP won't deliver one console's
+   broadcast stream to another; kept opt-in and per-source because relaying a
+   direction that already works would deliver every packet twice
+   (direct + relayed copy). Unset = no local relay at all. */
+static bool relay_src_allowed(const uint8_t *src_ip)
+{
+    static int allow_count = -2;            /* -2 = not parsed yet */
+    static uint8_t allow[8][4];
+
+    if (allow_count == -2) {
+        const char *env = getenv("LANPLAY_RELAY_ONLY_FROM");
+        allow_count = 0;
+        if (env && *env) {
+            const char *p = env;
+            while (*p && allow_count < 8) {
+                unsigned a, b, c, d;
+                int n = 0;
+                if (sscanf(p, "%u.%u.%u.%u%n", &a, &b, &c, &d, &n) == 4
+                        && a < 256 && b < 256 && c < 256 && d < 256) {
+                    allow[allow_count][0] = a;
+                    allow[allow_count][1] = b;
+                    allow[allow_count][2] = c;
+                    allow[allow_count][3] = d;
+                    allow_count++;
+                    p += n;
+                }
+                while (*p && *p != ',') p++;
+                if (*p == ',') p++;
+            }
+            LLOG(LLOG_INFO, "local broadcast relay enabled for %d source ip(s)", allow_count);
+        }
+    }
+    for (int i = 0; i < allow_count; i++) {
+        if (CMP_IPV4(allow[i], src_ip)) {
+            return true;
+        }
+    }
+    return false;
+}
+static int relay_broadcast_cb(void *p, const struct arp_item *item)
+{
+    struct broadcast_relay_ctx *ctx = p;
+    struct payload part;
+
+    if (CMP_IPV4(item->ip, ctx->src_ip)) {
+        return 0; /* never echo a broadcast back to its sender */
+    }
+    part.ptr = ctx->packet;
+    part.len = ctx->len;
+    part.next = NULL;
+    send_ether(ctx->packet_ctx, item->mac, ETHER_TYPE_IPV4, &part);
+    return 0;
+}
+
 int process_ipv4(struct packet_ctx *arg, const struct ether_frame *ether)
 {
     struct ipv4 ipv4;
@@ -98,13 +161,29 @@ int process_ipv4(struct packet_ctx *arg, const struct ether_frame *ether)
         }
     } else if (IS_SUBNET(ipv4.dst, arg->subnet_net, arg->subnet_mask)) {
         if (IS_BROADCAST(ipv4.dst, arg->subnet_net, arg->subnet_mask)) {
-            /* Forward the broadcast to the relay server only. This used to
-               also re-send the packet back to the sender's own MAC, so every
-               console received an echo of each broadcast it sent — something
-               that never happens on a real LAN: ldn_mitm scans found the
-               console's own network, and broadcast-based game session
-               protocols heard themselves talk. */
-            return lan_client_send_ipv4(arg->arg, ipv4.dst, ipv4.ether->payload, ipv4.total_len);
+            /* Forward the broadcast to the relay server, and relay it locally
+               to every other console we know (as unicast ethernet frames,
+               which WiFi delivers reliably — real broadcast frames between
+               wireless clients are unacknowledged and often dropped or not
+               re-forwarded at all by the AP; captures show one console never
+               receiving the other's game broadcasts, e.g. Street Fighter
+               30th AC on UDP :12345, which then fails with 2618-0006).
+               This used to re-send the packet to the sender's OWN mac
+               instead, so every console heard an echo of everything it
+               broadcast — something that never happens on a real LAN, and
+               which broke broadcast-based games and made ldn_mitm scans find
+               their own network. The sender is explicitly skipped now. */
+            lan_client_send_ipv4(arg->arg, ipv4.dst, ipv4.ether->payload, ipv4.total_len);
+
+            struct broadcast_relay_ctx ctx;
+            ctx.packet_ctx = arg;
+            ctx.src_ip = ipv4.src;
+            ctx.packet = ipv4.ether->payload;
+            ctx.len = ipv4.total_len;
+            if (relay_src_allowed(ipv4.src)) {
+                arp_for_each(arg, &ctx, relay_broadcast_cb);
+            }
+            return 0;
         } else if (arp_has_ip(arg, ipv4.dst)) {
             uint8_t dst_mac[6];
             struct payload part;
