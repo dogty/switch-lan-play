@@ -156,6 +156,7 @@ int lan_client_close(struct lan_play *lan_play)
 
     uv_close((uv_handle_t *)&lan_play->client, NULL);
     uv_close((uv_handle_t *)&lan_play->client_keepalive_timer, NULL);
+    uv_close((uv_handle_t *)&lan_play->real_broadcast_timer, NULL);
 
     return 0;
 }
@@ -261,6 +262,27 @@ int lan_client_process_frag(struct lan_play *lan_play, const uint8_t *packet, ui
     header.total_part = READ_NET8(packet, LC_FRAG_TOTAL_PART);
     header.len = READ_NET16(packet, LC_FRAG_LEN);
     header.pmtu = READ_NET16(packet, LC_FRAG_PMTU);
+
+    // Validate the untrusted header before using its fields as buffer
+    // offsets/lengths. pmtu/part/total_part/len all come off the wire; without
+    // these checks a crafted packet writes far past frag->buffer (heap overflow)
+    // and over-reads the receive buffer. total_part is capped at 8 because the
+    // completion bitmask (frag->part) is only 8 bits, which also keeps the
+    // shifts below well-defined.
+    if (len < LC_FRAG_HEADER_LEN) {
+        LLOG(LLOG_WARNING, "fragment too short: %d", len);
+        return 0;
+    }
+    uint16_t payload_len = len - LC_FRAG_HEADER_LEN;
+    size_t offset = (size_t)header.pmtu * header.part;
+    if (header.total_part == 0 || header.total_part > 8
+            || header.part >= header.total_part
+            || header.len > payload_len
+            || offset + header.len > sizeof(frags->buffer)) {
+        LLOG(LLOG_WARNING, "invalid fragment header: part %d/%d pmtu %d len %d",
+            header.part, header.total_part, header.pmtu, header.len);
+        return 0;
+    }
 
     // LLOG(LLOG_DEBUG, "lan_client_process_frag %d:%d/%d", header.id, header.part, header.total_part);
     struct lan_client_fragment *frag = NULL;
