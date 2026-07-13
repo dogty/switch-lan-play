@@ -98,13 +98,13 @@ int process_ipv4(struct packet_ctx *arg, const struct ether_frame *ether)
         }
     } else if (IS_SUBNET(ipv4.dst, arg->subnet_net, arg->subnet_mask)) {
         if (IS_BROADCAST(ipv4.dst, arg->subnet_net, arg->subnet_mask)) {
-            lan_client_send_ipv4(arg->arg, ipv4.dst, ipv4.ether->payload, ipv4.total_len);
-
-            struct payload part;
-            part.ptr = ipv4.ether->payload;
-            part.len = ipv4.total_len;
-            part.next = NULL;
-            return send_ether(arg, ether->src, ETHER_TYPE_IPV4, &part);
+            /* Forward the broadcast to the relay server only. This used to
+               also re-send the packet back to the sender's own MAC, so every
+               console received an echo of each broadcast it sent — something
+               that never happens on a real LAN: ldn_mitm scans found the
+               console's own network, and broadcast-based game session
+               protocols heard themselves talk. */
+            return lan_client_send_ipv4(arg->arg, ipv4.dst, ipv4.ether->payload, ipv4.total_len);
         } else if (arp_has_ip(arg, ipv4.dst)) {
             uint8_t dst_mac[6];
             struct payload part;
