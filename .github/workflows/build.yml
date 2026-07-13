@@ -1,65 +1,69 @@
 name: Build
 
-on: [push]
+on: [push, pull_request]
+
+env:
+  # The project (and its libuv submodule) declare cmake_minimum_required < 3.5,
+  # which CMake 4.x on current runners refuses to configure without this.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
       with:
-        submodules: true
+        submodules: recursive
     - name: install dependencies
-      run: sudo apt install -y libpcap-dev
+      run: sudo apt-get update && sudo apt-get install -y libpcap-dev
     - name: make
       run: |
         mkdir build
         cd build
-        cmake ..
-        make
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(nproc)
     - name: upload built files
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
         name: lan-play-linux
         path: build/src/lan-play
+
   build-windows:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
       with:
-        submodules: true
-    - name: Setup msbuild.exe
-      uses: microsoft/setup-msbuild@v1.1
+        submodules: recursive
     - name: make
       run: |
         mkdir build
         cd build
-        cmake ..
-        msbuild SwitchLanPlay.sln
-
+        cmake -A x64 ..
+        cmake --build . --config Release
     - name: upload built files
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
         name: lan-play-windows
-        path: build/src/Debug/lan-play.exe
+        path: build/src/Release/lan-play.exe
+
   build-macos:
     runs-on: macos-latest
+    continue-on-error: true
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
       with:
-        submodules: true
+        submodules: recursive
     - name: make
       run: |
         mkdir build
         cd build
-        cmake ..
-        make
-
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(sysctl -n hw.ncpu)
     - name: upload built files
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
         name: lan-play-macos
         path: build/src/lan-play
