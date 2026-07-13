@@ -60,6 +60,7 @@ int lan_play_init(struct lan_play *lan_play)
     uint8_t subnet_mask[4];
 
     lan_play->broadcast = options.broadcast;
+    lan_play->local_only = options.local_only;
     lan_play->pmtu = options.pmtu;
 
     if (options.relay_server_addr) {

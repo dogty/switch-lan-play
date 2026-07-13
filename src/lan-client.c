@@ -480,6 +480,12 @@ static int lan_client_send_raw(struct lan_play *lan_play, uv_buf_t *bufs, int bu
 
 int lan_client_send(struct lan_play *lan_play, uint8_t type, const uint8_t *packet, uint16_t len)
 {
+    if (lan_play->local_only) {
+        /* --local-only: nothing goes to a relay server; the client only
+           captures local traffic and re-delivers broadcasts locally. */
+        return 0;
+    }
+
     uv_buf_t bufs[3];
     bufs[0] = uv_buf_init((char *)&type, sizeof(type));
 

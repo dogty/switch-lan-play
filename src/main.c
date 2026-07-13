@@ -60,6 +60,7 @@ int parse_arguments(int argc, char **argv)
     options.version = 0;
 
     options.broadcast = false;
+    options.local_only = false;
     options.pmtu = 0;
     options.fake_internet = false;
     options.list_if = false;
@@ -134,6 +135,12 @@ int parse_arguments(int argc, char **argv)
         } else if (!strcmp(arg, "--broadcast")) {
             options.broadcast = true;
             options.relay_server_addr = "255.255.255.255:11451";
+        } else if (!strcmp(arg, "--local-only")) {
+            /* No relay server: only capture local traffic and re-deliver
+               broadcasts between local consoles (see LANPLAY_RELAY_ONLY_FROM).
+               The dummy address just satisfies the address parser. */
+            options.local_only = true;
+            options.relay_server_addr = "127.0.0.1:11451";
         } else if (!strcmp(arg, "--pmtu")) {
             CHECK_PARAM();
             options.pmtu = atoi(argv[i + 1]);
@@ -205,6 +212,7 @@ void print_help(const char *name)
         "        [--help]\n"
         "        [--version]\n"
         "        [--broadcast]\n"
+        "        [--local-only] no relay server; only fix local broadcast delivery\n"
         "        [--fake-internet]\n"
         "        [--netif <interface>] default: all\n"
         // "        [--netif-netmask <ipnetmask>] default: 255.255.0.0\n"

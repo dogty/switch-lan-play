@@ -57,6 +57,7 @@ struct lan_play {
     // lan_client
     int pmtu;
     bool broadcast;
+    bool local_only;
     bool next_real_broadcast;
     uv_udp_t client;
     uv_timer_t client_keepalive_timer;
@@ -88,6 +89,7 @@ struct cli_options {
     int version;
 
     bool broadcast;
+    bool local_only;
     int pmtu;
     bool fake_internet;
     bool list_if;
